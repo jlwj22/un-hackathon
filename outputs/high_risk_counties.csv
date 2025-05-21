@@ -1,0 +1,60 @@
+"County","FIPS","Cluster","MultiRiskScore","MultiRiskCategory","MentalHealthCrises","MentalHealthRisk","Obesity","ObesityRisk","Diabetes","DiabetesRisk","FoodAccess","FoodDesertRisk","PercentUninsured","BelowPovertyLine","MedianHouseholdIncome"
+"Treutlen","13283","3",4,"Critical (3+ High Risks)",6.2174690747,"High Risk",43.4,"High Risk",14.4,"High Risk",4.9,"High Risk",925,33.3,45699
+"Atkinson","13003","3",3,"Critical (3+ High Risks)",6.1377008543,"High Risk",42.1,"High Risk",15,"High Risk",5.8,"Medium Risk",1412,34.3,44890
+"Ben Hill","13017","3",3,"Critical (3+ High Risks)",6.1127894141,"High Risk",41.9,"High Risk",14.7,"High Risk",6.2,"Medium Risk",1993,35.2,40325
+"Brooks","13027","3",3,"Critical (3+ High Risks)",6.188033206,"High Risk",42.1,"High Risk",14.7,"High Risk",7.1,"Low Risk",1849,35.5,46796
+"Chattahoochee","13053","3",3,"Critical (3+ High Risks)",5.5695575068,"Very Low Risk",43.1,"High Risk",14.2,"High Risk",3.7,"High Risk",484,16.7,57550
+"Clay","13061","3",3,"Critical (3+ High Risks)",5.9815718229,"High Risk",44.8,"High Risk",14.2,"High Risk",7.6,"Low Risk",268,39,37858
+"Clinch","13065","3",3,"Critical (3+ High Risks)",6.4494132153,"High Risk",44.9,"High Risk",14.4,"High Risk",6.6,"Medium Risk",998,28.4,45718
+"Decatur","13087","3",3,"Critical (3+ High Risks)",6.1034439943,"High Risk",39.8,"High Risk",13.9,"High Risk",7.1,"Low Risk",3148,30.5,50452
+"Evans","13109","3",3,"Critical (3+ High Risks)",6.1935688546,"High Risk",44.8,"High Risk",14.2,"High Risk",7.9,"Low Risk",1445,34.6,50831
+"Hancock","13141","3",3,"Critical (3+ High Risks)",5.7414832708,"Low Risk",47.5,"High Risk",16.7,"High Risk",4.7,"High Risk",685,44.1,40099
+"Jenkins","13165","3",3,"Critical (3+ High Risks)",6.1010019716,"High Risk",44.5,"High Risk",15.9,"High Risk",7.3,"Low Risk",854,36.2,42539
+"Lanier","13173","3",3,"Critical (3+ High Risks)",6.0664226434,"High Risk",41.1,"High Risk",14.5,"High Risk",6.9,"Medium Risk",1138,26.9,54586
+"Quitman","13239","3",3,"Critical (3+ High Risks)",6.0119517367,"High Risk",44.1,"High Risk",14.3,"High Risk",8.1,"Low Risk",253,40.6,42480
+"Randolph","13243","3",3,"Critical (3+ High Risks)",6.4047193887,"High Risk",48.6,"High Risk",18.1,"High Risk",5.6,"Medium Risk",662,40.8,39926
+"Richmond","13245","3",3,"Critical (3+ High Risks)",6.1749818806,"High Risk",44.4,"High Risk",14.7,"High Risk",5.9,"Medium Risk",19788,32,52073
+"Sumter","13261","3",3,"Critical (3+ High Risks)",6.0028867409,"High Risk",44,"High Risk",14.7,"High Risk",7.4,"Low Risk",3075,44.7,43835
+"Talbot","13263","3",3,"Critical (3+ High Risks)",5.985550362,"High Risk",43.9,"High Risk",14.6,"High Risk",6.7,"Medium Risk",575,45.1,41656
+"Taliaferro","13265","3",3,"Critical (3+ High Risks)",5.6412636586,"Low Risk",43.3,"High Risk",14.5,"High Risk",3.2,"High Risk",121,39.7,46469
+"Taylor","13269","3",3,"Critical (3+ High Risks)",6.2297018865,"High Risk",42.7,"High Risk",14.8,"High Risk",6.9,"Medium Risk",958,39.2,44708
+"Telfair","13271","3",3,"Critical (3+ High Risks)",5.8153298531,"Medium Risk",45.6,"High Risk",16.3,"High Risk",4.4,"High Risk",1129,42.2,42203
+"Terrell","13273","3",3,"Critical (3+ High Risks)",6.2038935143,"High Risk",47.1,"High Risk",16,"High Risk",7.2,"Low Risk",1036,40.9,45616
+"Turner","13287","3",3,"Critical (3+ High Risks)",6.1267436782,"High Risk",43.7,"High Risk",14.9,"High Risk",6.8,"Medium Risk",1044,37.1,42769
+"Warren","13301","3",3,"Critical (3+ High Risks)",6.1105792721,"High Risk",44.6,"High Risk",14.4,"High Risk",8,"Low Risk",548,39.4,48308
+"Washington","13303","3",3,"Critical (3+ High Risks)",6.0578718485,"High Risk",43,"High Risk",14.2,"High Risk",7.1,"Low Risk",1992,29.5,48809
+"Webster","13307","3",3,"Critical (3+ High Risks)",6.0476601185,"High Risk",43.5,"High Risk",14.6,"High Risk",7.6,"Low Risk",343,35,45036
+"Appling","13001","3",2,"Severe (2 High Risks)",6.1325997663,"High Risk",40.7,"High Risk",12.7,"Medium Risk",5.1,"Medium Risk",2692,33.5,51054
+"Bacon","13005","3",2,"Severe (2 High Risks)",6.2356142574,"High Risk",41.3,"High Risk",12.7,"Medium Risk",7.3,"Low Risk",1522,31.1,48915
+"Baker","13007","3",2,"Severe (2 High Risks)",5.9469242876,"Medium Risk",41.9,"High Risk",14.3,"High Risk",5.1,"Medium Risk",221,39.1,47850
+"Bibb","13021","3",2,"Severe (2 High Risks)",5.9471788373,"Medium Risk",48.5,"High Risk",14.2,"High Risk",6.5,"Medium Risk",19348,32,51569
+"Brantley","13025","2",2,"Severe (2 High Risks)",6.2445995556,"High Risk",39.2,"High Risk",11.4,"Low Risk",7.6,"Low Risk",2668,25.8,57325
+"Calhoun","13037","3",2,"Severe (2 High Risks)",5.7343526665,"Low Risk",46.6,"High Risk",16.8,"High Risk",7.3,"Low Risk",437,40.3,41260
+"Candler","13043","3",2,"Severe (2 High Risks)",6.1300141909,"High Risk",44,"High Risk",13.6,"Medium Risk",7.8,"Low Risk",1739,31.4,49332
+"Chattooga","13055","3",2,"Severe (2 High Risks)",6.3802562549,"High Risk",39,"High Risk",12.1,"Low Risk",5.3,"Medium Risk",3159,29.3,51225
+"Clarke","13059","2",2,"Severe (2 High Risks)",6.0556638399,"High Risk",37,"High Risk",13.1,"Medium Risk",5.5,"Medium Risk",14830,24.8,54550
+"Clayton","13063","3",2,"Severe (2 High Risks)",5.9456184548,"Medium Risk",45.4,"High Risk",14.9,"High Risk",7.2,"Low Risk",38746,26.6,57974
+"Crisp","13081","3",2,"Severe (2 High Risks)",6.1278668015,"High Risk",44.8,"High Risk",13.5,"Medium Risk",7.1,"Low Risk",2109,39.7,43174
+"Dooly","13093","3",2,"Severe (2 High Risks)",5.8021012139,"Medium Risk",44,"High Risk",13.9,"High Risk",5.6,"Medium Risk",996,31.6,50396
+"Dougherty","13095","3",2,"Severe (2 High Risks)",5.9175376085,"Medium Risk",44.4,"High Risk",15.7,"High Risk",5.3,"Medium Risk",9977,36.9,45863
+"Early","13099","3",2,"Severe (2 High Risks)",5.9333844293,"Medium Risk",45.1,"High Risk",14.1,"High Risk",8,"Low Risk",1139,38.3,43444
+"Emanuel","13107","3",2,"Severe (2 High Risks)",6.2463404951,"High Risk",42.7,"High Risk",13.6,"Medium Risk",6,"Medium Risk",2886,34.3,46017
+"Grady","13131","3",2,"Severe (2 High Risks)",6.0247294422,"High Risk",41.8,"High Risk",13.2,"Medium Risk",7.8,"Low Risk",3590,28.2,52456
+"Irwin","13155","3",2,"Severe (2 High Risks)",5.9886065195,"High Risk",40.3,"High Risk",12.8,"Medium Risk",7.8,"Low Risk",1083,29.9,52918
+"Jeff Davis","13161","3",2,"Severe (2 High Risks)",6.0015179748,"High Risk",41.3,"High Risk",13.6,"Medium Risk",5.5,"Medium Risk",2155,27.6,47635
+"Jefferson","13163","3",2,"Severe (2 High Risks)",5.87874369,"Medium Risk",44.2,"High Risk",15.8,"High Risk",8.3,"Low Risk",2174,32.7,45829
+"Johnson","13167","3",2,"Severe (2 High Risks)",5.8222323416,"Medium Risk",42.8,"High Risk",14.6,"High Risk",6.7,"Medium Risk",946,31.5,51602
+"Liberty","13179","3",2,"Severe (2 High Risks)",5.3801522317,"Very Low Risk",45.9,"High Risk",13.9,"High Risk",6.6,"Medium Risk",6598,21.7,57699
+"Macon","13193","3",2,"Severe (2 High Risks)",5.9718246233,"Medium Risk",48.3,"High Risk",17.7,"High Risk",7.7,"Low Risk",1442,41.9,41895
+"Marion","13197","3",2,"Severe (2 High Risks)",6.0635584022,"High Risk",39.9,"High Risk",13.2,"Medium Risk",8.4,"Low Risk",1017,40.1,51270
+"Miller","13201","3",2,"Severe (2 High Risks)",6.1136520896,"High Risk",41.7,"High Risk",13.3,"Medium Risk",7.6,"Low Risk",598,30.9,50799
+"Mitchell","13205","3",2,"Severe (2 High Risks)",5.8392064398,"Medium Risk",46.8,"High Risk",15.3,"High Risk",6.5,"Medium Risk",2181,33.5,48774
+"Montgomery","13209","3",2,"Severe (2 High Risks)",5.7434338485,"Low Risk",42.7,"High Risk",13.9,"High Risk",7.8,"Low Risk",889,28.7,53248
+"Murray","13213","2",2,"Severe (2 High Risks)",6.0635648078,"High Risk",38,"High Risk",11.4,"Low Risk",7.4,"Low Risk",6123,19.8,63836
+"Muscogee","13215","3",2,"Severe (2 High Risks)",5.7203034941,"Low Risk",41.7,"High Risk",14.6,"High Risk",7,"Low Risk",19472,25.7,52492
+"Pierce","13229","2",2,"Severe (2 High Risks)",5.9807172763,"High Risk",39.6,"High Risk",11.4,"Low Risk",7.9,"Low Risk",2588,21.6,56330
+"Pulaski","13235","3",2,"Severe (2 High Risks)",6.2803676203,"High Risk",43.5,"High Risk",12.8,"Medium Risk",8,"Low Risk",1014,31.9,46123
+"Stewart","13259","3",2,"Severe (2 High Risks)",5.3285315759,"Very Low Risk",43.2,"High Risk",16.5,"High Risk",6.6,"Medium Risk",516,37.2,41227
+"Walker","13295","2",2,"Severe (2 High Risks)",6.1598960885,"High Risk",41.8,"High Risk",11.1,"Very Low Risk",6.6,"Medium Risk",7352,20.1,58363
+"Wheeler","13309","3",2,"Severe (2 High Risks)",5.7153152878,"Low Risk",47.5,"High Risk",15.7,"High Risk",7.4,"Low Risk",684,36.6,41163
+"Wilkinson","13319","3",2,"Severe (2 High Risks)",6.0343916067,"High Risk",43.6,"High Risk",13.6,"Medium Risk",7,"Low Risk",983,33,51498

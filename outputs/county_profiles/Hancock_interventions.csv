@@ -1,0 +1,7 @@
+"Risk_Factor","Score","Intervention_Type","Intervention_Examples"
+"Obesity",3,"Obesity Prevention","Community fitness programs; Nutrition education; School-based physical activity; Healthy food retail initiatives"
+"Diabetes",3,"Diabetes Management","Diabetes screening; Self-management education; Community health workers; Medication access programs"
+"Food Access",3,"Food Security Programs","Food banks; Community gardens; Farmers markets; Food prescription programs; Mobile markets"
+"Poverty",3,"Economic Support","Job training; Housing assistance; Educational support; Child care subsidies"
+"Mental Health Crises",1,"Mental Health Services","Mobile mental health clinics; Telehealth services; Community health workers; School-based counseling"
+"Healthcare Access",0,"Healthcare Access","Insurance enrollment assistance; Federally Qualified Health Centers; Telehealth infrastructure; Transportation services"

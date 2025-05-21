@@ -1,0 +1,1681 @@
+---
+title: "county_analysis"
+output: html_document
+date: "2025-04-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Georgia Health Equity Analysis - Part 1: Data Preparation
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Set a cohesive theme for all visualizations
+theme_set(theme_minimal() + 
+          theme(plot.title = element_text(face = "bold", size = 14),
+                plot.subtitle = element_text(size = 12, color = "gray50"),
+                axis.title = element_text(size = 11),
+                legend.title = element_text(size = 10),
+                legend.text = element_text(size = 9)))
+
+# ========== DATA IMPORT AND PREPARATION ==========
+# Import the Excel file (adjust path as needed)
+file_path <- "2025_county_health_rankings_georgia_data_-_v1.xlsx"
+
+# Check if the file exists
+if (!file.exists(file_path)) {
+  stop("File not found. Please make sure the Excel file is in the correct location.")
+}
+
+# Import the Excel file with health rankings data
+ga_data <- read_excel(file_path, 
+                      sheet = "Select Measure Data", 
+                      skip = 1)  # Skip header row
+
+# Also get the additional data sheet for some of our metrics
+ga_additional <- read_excel(file_path,
+                           sheet = "Additional Measure Data",
+                           skip = 1)
+
+# Clean column names by removing spaces and special characters
+names(ga_data) <- make.names(names(ga_data), unique = TRUE)
+names(ga_additional) <- make.names(names(ga_additional), unique = TRUE)
+
+# Create a combined dataset with the columns we need
+ga_health <- ga_data %>%
+  # Filter out the state-level row
+  filter(FIPS != "13000") %>%
+  # Select the columns we need from first sheet
+  select(
+    FIPS,
+    County,
+    MentalHealthCrises = `Average.Number.of.Mentally.Unhealthy.Days`,
+    ClinicAccess = `Mental.Health.Provider.Rate`,
+    FoodAccess = `Food.Environment.Index`,
+    PercentUninsured = `X..Uninsured`,
+    BelowPovertyLine = `X..Children.in.Poverty`,
+    RentBurdened = `Severe.Housing.Cost.Burden`,
+    HighSchoolGradRate = `X..Completed.High.School`,
+    UnemploymentRate = `X..Unemployed`
+  )
+
+# Join with additional data for the remaining metrics
+ga_health <- ga_health %>%
+  left_join(
+    ga_additional %>%
+      select(
+        FIPS,
+        Obesity = `X..Adults.with.Obesity`,
+        Diabetes = `X..Adults.with.Diabetes`,
+        MedianHouseholdIncome = `Median.Household.Income`,
+        PercentBlack = `X..Non.Hispanic.Black`,
+        PercentHispanic = `X..Hispanic`
+      ),
+    by = "FIPS"
+  )
+
+# Convert any remaining columns to appropriate datatypes
+ga_health <- ga_health %>%
+  mutate(
+    FIPS = as.character(FIPS),
+    County = as.character(County),
+    # Ensure all numeric variables are correctly typed
+    across(where(is.numeric), as.numeric)
+  )
+
+# Create health issue indicators based on thresholds
+ga_health <- ga_health %>%
+  mutate(
+    # Mental health risk categorization
+    MentalHealthRisk = case_when(
+      MentalHealthCrises >= quantile(MentalHealthCrises, 0.75, na.rm = TRUE) ~ "High Risk",
+      MentalHealthCrises >= quantile(MentalHealthCrises, 0.5, na.rm = TRUE) ~ "Medium Risk",
+      MentalHealthCrises >= quantile(MentalHealthCrises, 0.25, na.rm = TRUE) ~ "Low Risk",
+      TRUE ~ "Very Low Risk"
+    ),
+    # Obesity risk categorization
+    ObesityRisk = case_when(
+      Obesity >= 35 ~ "High Risk",
+      Obesity >= 30 ~ "Medium Risk",
+      Obesity >= 25 ~ "Low Risk",
+      TRUE ~ "Very Low Risk"
+    ),
+    # Diabetes risk categorization
+    DiabetesRisk = case_when(
+      Diabetes >= quantile(Diabetes, 0.75, na.rm = TRUE) ~ "High Risk",
+      Diabetes >= quantile(Diabetes, 0.5, na.rm = TRUE) ~ "Medium Risk",
+      Diabetes >= quantile(Diabetes, 0.25, na.rm = TRUE) ~ "Low Risk",
+      TRUE ~ "Very Low Risk"
+    ),
+    # Food desert indicator
+    FoodDesertRisk = case_when(
+      FoodAccess < 5 ~ "High Risk",
+      FoodAccess < 7 ~ "Medium Risk",
+      FoodAccess >= 7 ~ "Low Risk",
+      TRUE ~ NA_character_
+    ),
+    # Convert risk categories to factors with ordered levels
+    MentalHealthRisk = factor(MentalHealthRisk, 
+                             levels = c("Very Low Risk", "Low Risk", "Medium Risk", "High Risk")),
+    ObesityRisk = factor(ObesityRisk, 
+                         levels = c("Very Low Risk", "Low Risk", "Medium Risk", "High Risk")),
+    DiabetesRisk = factor(DiabetesRisk, 
+                          levels = c("Very Low Risk", "Low Risk", "Medium Risk", "High Risk")),
+    FoodDesertRisk = factor(FoodDesertRisk, 
+                           levels = c("Low Risk", "Medium Risk", "High Risk"))
+  )
+
+# Handle missing values with column means
+for(col in colnames(ga_health)) {
+  if(is.numeric(ga_health[[col]])) {
+    ga_health[[col]][is.na(ga_health[[col]])] <- mean(ga_health[[col]], na.rm = TRUE)
+  }
+}
+
+# Check the dataset
+print(summary(ga_health))
+
+# Create a directory for outputs
+dir.create("outputs", showWarnings = FALSE)
+
+# Save processed data for other scripts to use
+saveRDS(ga_health, "outputs/ga_health_processed.rds")
+
+print("Data preparation complete. Processed data saved to outputs/ga_health_processed.rds")
+```
+
+```{r}
+# Georgia Health Equity Analysis - Part 2: Exploratory Data Analysis
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(scales)
+
+# Load processed data
+ga_health <- readRDS("outputs/ga_health_processed.rds")
+
+# Create directories for outputs
+dir.create("plots", showWarnings = FALSE)
+
+# Set a cohesive theme for all visualizations
+theme_set(theme_minimal() + 
+          theme(plot.title = element_text(face = "bold", size = 14),
+                plot.subtitle = element_text(size = 12, color = "gray50"),
+                axis.title = element_text(size = 11),
+                legend.title = element_text(size = 10),
+                legend.text = element_text(size = 9)))
+
+# Color palettes for consistent visualization
+health_palette <- viridis(7, option = "plasma")
+
+# Function to save plots
+save_plot <- function(plot, filename, width = 10, height = 7) {
+  ggsave(paste0("plots/", filename), plot, width = width, height = height, dpi = 300)
+}
+
+# ========== EXPLORATORY DATA ANALYSIS ==========
+
+# ---- 1. Health Issues Distribution ----
+
+# Mental Health Crisis Days Distribution
+p1 <- ggplot(ga_health, aes(x = MentalHealthCrises)) +
+  geom_histogram(fill = health_palette[1], bins = 20, alpha = 0.8) +
+  geom_density(color = health_palette[7], size = 1) +
+  labs(title = "Distribution of Mental Health Crisis Days in Georgia Counties",
+       subtitle = "Higher values indicate more mentally unhealthy days per month",
+       x = "Average # of Mentally Unhealthy Days",
+       y = "Number of Counties") +
+  theme(plot.title.position = "plot")
+print(p1)
+save_plot(p1, "mental_health_distribution.png")
+
+# Obesity Distribution
+p2 <- ggplot(ga_health, aes(x = Obesity)) +
+  geom_histogram(fill = health_palette[2], bins = 20, alpha = 0.8) +
+  geom_density(color = health_palette[7], size = 1) +
+  labs(title = "Distribution of Obesity Rates in Georgia Counties",
+       subtitle = "Percentage of adults with obesity",
+       x = "% Adults with Obesity",
+       y = "Number of Counties") +
+  theme(plot.title.position = "plot")
+print(p2)
+save_plot(p2, "obesity_distribution.png")
+
+# Diabetes Distribution
+p3 <- ggplot(ga_health, aes(x = Diabetes)) +
+  geom_histogram(fill = health_palette[3], bins = 20, alpha = 0.8) +
+  geom_density(color = health_palette[7], size = 1) +
+  labs(title = "Distribution of Diabetes Rates in Georgia Counties",
+       subtitle = "Percentage of adults with diabetes",
+       x = "% Adults with Diabetes",
+       y = "Number of Counties") +
+  theme(plot.title.position = "plot")
+print(p3)
+save_plot(p3, "diabetes_distribution.png")
+
+# Combine health issue distributions
+grid_plot <- grid.arrange(p1, p2, p3, ncol = 2)
+save_plot(grid_plot, "health_issues_distributions.png", width = 14, height = 10)
+
+# ---- 2. Top Counties by Health Issues ----
+
+# Function to create top counties plot
+plot_top_counties <- function(data, var, var_name, fill_color, n = 10) {
+  top_counties <- data %>%
+    arrange(desc(!!sym(var))) %>%
+    head(n)
+  
+  ggplot(top_counties, aes(x = reorder(County, !!sym(var)), y = !!sym(var))) +
+    geom_col(fill = fill_color, alpha = 0.8) +
+    coord_flip() +
+    labs(title = paste("Top", n, "Counties with Highest", var_name),
+         x = "County",
+         y = var_name) +
+    theme(axis.text.y = element_text(size = 9))
+}
+
+# Top counties for mental health crises
+p4 <- plot_top_counties(ga_health, "MentalHealthCrises", "Mental Health Crisis Days", health_palette[1])
+print(p4)
+save_plot(p4, "top_mental_health_counties.png")
+
+# Top counties for obesity
+p5 <- plot_top_counties(ga_health, "Obesity", "Obesity Rate (%)", health_palette[2])
+print(p5)
+save_plot(p5, "top_obesity_counties.png")
+
+# Top counties for diabetes
+p6 <- plot_top_counties(ga_health, "Diabetes", "Diabetes Rate (%)", health_palette[3])
+print(p6)
+save_plot(p6, "top_diabetes_counties.png")
+
+# ---- 3. Relationships Between Health Issues and Socioeconomic Factors ----
+
+# Mental Health vs Poverty
+p8 <- ggplot(ga_health, aes(x = BelowPovertyLine, y = MentalHealthCrises)) +
+  geom_point(aes(color = MedianHouseholdIncome, size = ClinicAccess), alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  scale_color_viridis_c() +
+  labs(title = "Relationship Between Poverty and Mental Health Crisis Days",
+       subtitle = "Size indicates access to mental health providers",
+       x = "Children Below Poverty Line (%)",
+       y = "Mental Health Crisis Days",
+       color = "Median Household\nIncome ($)",
+       size = "Mental Health\nProvider Rate") +
+  theme(legend.key.height = unit(0.8, "cm"))
+print(p8)
+save_plot(p8, "poverty_vs_mental_health.png")
+
+# Obesity vs Education and Income
+p9 <- ggplot(ga_health, aes(x = HighSchoolGradRate, y = Obesity)) +
+  geom_point(aes(color = MedianHouseholdIncome, size = FoodAccess), alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  scale_color_viridis_c() +
+  labs(title = "Relationship Between Education and Obesity",
+       subtitle = "Size indicates food environment access (higher is better)",
+       x = "High School Graduation Rate (%)",
+       y = "Obesity Rate (%)",
+       color = "Median Household\nIncome ($)",
+       size = "Food Environment\nIndex") +
+  theme(legend.key.height = unit(0.8, "cm"))
+print(p9)
+save_plot(p9, "education_vs_obesity.png")
+
+# Diabetes vs Race and Income
+p10 <- ggplot(ga_health, aes(x = MedianHouseholdIncome, y = Diabetes)) +
+  geom_point(aes(color = PercentBlack, size = PercentUninsured), alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  scale_color_viridis_c() +
+  scale_x_continuous(labels = dollar_format()) +
+  labs(title = "Relationship Between Income and Diabetes",
+       subtitle = "Size indicates percentage of uninsured population",
+       x = "Median Household Income ($)",
+       y = "Diabetes Rate (%)",
+       color = "Black Population (%)",
+       size = "Uninsured (%)") +
+  theme(legend.key.height = unit(0.8, "cm"))
+print(p10)
+save_plot(p10, "income_vs_diabetes.png")
+
+# ---- 4. Risk Profile Analysis ----
+
+# Count counties by risk categories
+risk_counts <- ga_health %>%
+  summarize(
+    Mental_High = sum(MentalHealthRisk == "High Risk"),
+    Mental_Medium = sum(MentalHealthRisk == "Medium Risk"),
+    Mental_Low = sum(MentalHealthRisk == "Low Risk"),
+    Mental_VeryLow = sum(MentalHealthRisk == "Very Low Risk"),
+    Obesity_High = sum(ObesityRisk == "High Risk"),
+    Obesity_Medium = sum(ObesityRisk == "Medium Risk"),
+    Obesity_Low = sum(ObesityRisk == "Low Risk"),
+    Obesity_VeryLow = sum(ObesityRisk == "Very Low Risk"),
+    Diabetes_High = sum(DiabetesRisk == "High Risk"),
+    Diabetes_Medium = sum(DiabetesRisk == "Medium Risk"),
+    Diabetes_Low = sum(DiabetesRisk == "Low Risk"),
+    Diabetes_VeryLow = sum(DiabetesRisk == "Very Low Risk"),
+    Food_High = sum(FoodDesertRisk == "High Risk", na.rm = TRUE),
+    Food_Medium = sum(FoodDesertRisk == "Medium Risk", na.rm = TRUE),
+    Food_Low = sum(FoodDesertRisk == "Low Risk", na.rm = TRUE)
+  )
+
+# Prepare data for visualization
+risk_data <- data.frame(
+  Risk_Level = rep(c("High Risk", "Medium Risk", "Low Risk", "Very Low Risk"), 3),
+  Health_Issue = c(rep("Mental Health", 4), rep("Obesity", 4), rep("Diabetes", 4)),
+  Count = c(
+    risk_counts$Mental_High, risk_counts$Mental_Medium, risk_counts$Mental_Low, risk_counts$Mental_VeryLow,
+    risk_counts$Obesity_High, risk_counts$Obesity_Medium, risk_counts$Obesity_Low, risk_counts$Obesity_VeryLow,
+    risk_counts$Diabetes_High, risk_counts$Diabetes_Medium, risk_counts$Diabetes_Low, risk_counts$Diabetes_VeryLow
+  )
+) %>%
+  filter(!is.na(Count))
+
+# Set the order of risk levels
+risk_data$Risk_Level <- factor(risk_data$Risk_Level, 
+                              levels = c("Very Low Risk", "Low Risk", "Medium Risk", "High Risk"))
+
+# Plot risk distribution
+p11 <- ggplot(risk_data, aes(x = Health_Issue, y = Count, fill = Risk_Level)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = c("Very Low Risk" = "#4daf4a", 
+                              "Low Risk" = "#ffff33", 
+                              "Medium Risk" = "#ff7f00", 
+                              "High Risk" = "#e41a1c")) +
+  labs(title = "Distribution of Risk Categories by Health Issue",
+       subtitle = "Proportion of Georgia counties in each risk category",
+       x = "Health Issue",
+       y = "Proportion of Counties",
+       fill = "Risk Level") +
+  scale_y_continuous(labels = percent) +
+  theme(legend.position = "right")
+print(p11)
+save_plot(p11, "risk_distribution.png")
+
+# Create a multi-risk indicator to identify counties with multiple high-risk issues
+ga_health <- ga_health %>%
+  mutate(
+    MultiRiskScore = (MentalHealthRisk == "High Risk") * 1 +
+                     (ObesityRisk == "High Risk") * 1 +
+                     (DiabetesRisk == "High Risk") * 1 +
+                     (FoodDesertRisk == "High Risk") * 1,
+    MultiRiskCategory = case_when(
+      MultiRiskScore >= 3 ~ "Critical (3+ High Risks)",
+      MultiRiskScore == 2 ~ "Severe (2 High Risks)",
+      MultiRiskScore == 1 ~ "Moderate (1 High Risk)",
+      TRUE ~ "Low (No High Risks)"
+    ),
+    MultiRiskCategory = factor(MultiRiskCategory, 
+                              levels = c("Low (No High Risks)", 
+                                         "Moderate (1 High Risk)", 
+                                         "Severe (2 High Risks)", 
+                                         "Critical (3+ High Risks)"))
+  )
+
+# Visualize multi-risk distribution
+p12 <- ggplot(ga_health, aes(x = MultiRiskCategory, fill = MultiRiskCategory)) +
+  geom_bar() +
+  scale_fill_manual(values = c("Low (No High Risks)" = "#4daf4a", 
+                              "Moderate (1 High Risk)" = "#ffff33", 
+                              "Severe (2 High Risks)" = "#ff7f00", 
+                              "Critical (3+ High Risks)" = "#e41a1c")) +
+  labs(title = "Distribution of Counties by Multi-Risk Category",
+       subtitle = "Identifying counties with multiple high-risk health issues",
+       x = "Multi-Risk Category",
+       y = "Number of Counties") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(p12)
+save_plot(p12, "multi_risk_distribution.png")
+
+# Save updated data with multi-risk scores
+saveRDS(ga_health, "outputs/ga_health_with_risk_scores.rds")
+
+print("Exploratory analysis complete. Plots saved to plots/ directory.")
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(reshape2)
+
+# Load processed data
+ga_health <- readRDS("outputs/ga_health_with_risk_scores.rds")
+
+# Create directories for outputs
+dir.create("plots", showWarnings = FALSE)
+
+# ---- 1. Correlation Matrix Analysis ----
+
+# Print column names and classes for debugging
+cat("Columns in dataset:\n")
+str(ga_health)
+
+# Select only numeric variables for correlation
+# Explicitly exclude non-correlation columns
+numeric_vars <- ga_health %>%
+  select_if(is.numeric) %>%
+  select(-any_of(c("FIPS", "MultiRiskScore")))  # Use any_of to avoid errors if columns don't exist
+
+# Replace any remaining NA values with column means
+for(col in colnames(numeric_vars)) {
+  numeric_vars[[col]] <- ifelse(is.na(numeric_vars[[col]]), 
+                                mean(numeric_vars[[col]], na.rm = TRUE), 
+                                numeric_vars[[col]])
+}
+
+# Print columns for correlation
+cat("Columns used for correlation analysis:\n")
+print(names(numeric_vars))
+
+# Calculate correlation matrix
+corr_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
+print(dim(corr_matrix))  # Check dimensions
+
+# Save correlation matrix as CSV
+write.csv(corr_matrix, "outputs/correlation_matrix.csv")
+
+# Plot correlation matrix with adjusted parameters
+png("plots/correlation_matrix.png", width = 12, height = 10, units = "in", res = 300)
+corrplot(corr_matrix, 
+         method = "circle", 
+         type = "upper", 
+         tl.col = "black",
+         tl.srt = 45,
+         tl.cex = 0.7,  # Smaller text size for labels
+         addCoef.col = "black",
+         number.cex = 0.6,  # Smaller correlation numbers
+         col = colorRampPalette(c("#2c7bb6", "#ffffbf", "#d7191c"))(100))
+dev.off()
+
+# Heatmap of correlations
+melted_corr <- melt(corr_matrix)
+p7 <- ggplot(melted_corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "#2c7bb6", mid = "#ffffbf", high = "#d7191c", 
+                      midpoint = 0, limit = c(-1,1), name = "Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+        axis.text.y = element_text(size = 7),
+        axis.title = element_blank()) +
+  labs(title = "Correlation Heatmap of Health and Socioeconomic Factors",
+       subtitle = "Red indicates positive correlation, blue indicates negative correlation") +
+  coord_fixed()
+print(p7)
+ggsave("plots/correlation_heatmap.png", p7, width = 12, height = 10, dpi = 300)
+
+# Extract correlations with health issues if they exist in the data
+health_metrics <- c("MentalHealthCrises", "Obesity", "Diabetes")
+existing_metrics <- health_metrics[health_metrics %in% colnames(numeric_vars)]
+
+# Create correlation dataframes for existing health metrics
+for(metric in existing_metrics) {
+  # Create correlation dataframe for this health metric
+  corr_df <- data.frame(
+    Variable = rownames(corr_matrix),
+    Correlation = corr_matrix[, metric]
+  ) %>%
+    filter(Variable != metric) %>%
+    arrange(desc(abs(Correlation)))
+  
+  # Print top correlations for this health issue
+  cat(paste("\nTop correlations with", metric, ":\n"))
+  print(head(corr_df, 5))
+  
+  # Save the correlation data
+  write.csv(corr_df, paste0("outputs/", tolower(metric), "_correlations.csv"), row.names = FALSE)
+}
+
+print("Correlation analysis complete. Results saved to outputs/ and plots/ directories.")
+```
+
+```{r}
+# Variable Importance Plot from Random Forest Model
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(randomForest)
+
+# This would typically load your processed data
+# ga_health <- readRDS("outputs/ga_health_with_clusters.rds")
+
+# Function to create a nicer variable importance plot
+create_importance_plot <- function(importance_df, title = "Variable Importance for Predicting Health Outcomes") {
+  # Rename variables for clearer presentation
+  importance_df <- importance_df %>%
+    mutate(Variable = case_when(
+      Variable == "BelowPovertyLine" ~ "Poverty Rate",
+      Variable == "PercentUninsured" ~ "Uninsured Rate",
+      Variable == "ClinicAccess" ~ "Healthcare Provider Access",
+      Variable == "FoodAccess" ~ "Food Access Index",
+      Variable == "MedianHouseholdIncome" ~ "Median Household Income",
+      Variable == "HighSchoolGradRate" ~ "High School Graduation Rate",
+      Variable == "RentBurdened" ~ "Housing Cost Burden",
+      Variable == "UnemploymentRate" ~ "Unemployment Rate",
+      Variable == "PercentBlack" ~ "Black Population %",
+      Variable == "PercentHispanic" ~ "Hispanic Population %",
+      TRUE ~ Variable
+    ))
+  
+  # Create the plot
+  p <- ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+    geom_col(fill = viridis(1, begin = 0.2, end = 0.8)) +
+    coord_flip() +
+    labs(title = title,
+         subtitle = "Variables ranked by importance in predicting health outcomes",
+         x = "Social Determinant of Health",
+         y = "Importance Score") +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_text(size = 10),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12, color = "gray50")
+    )
+  
+  return(p)
+}
+
+# Example usage (assuming var_importance_df is available from your random forest model)
+# You would replace this data with actual model output
+example_importance <- data.frame(
+  Variable = c("PercentUninsured", "BelowPovertyLine", "MedianHouseholdIncome", 
+               "FoodAccess", "ClinicAccess", "HighSchoolGradRate", 
+               "UnemploymentRate", "RentBurdened", "PercentBlack", "PercentHispanic"),
+  Importance = c(28, 25, 20, 18, 15, 12, 10, 8, 5, 4)
+)
+
+# Create the plot
+importance_plot <- create_importance_plot(example_importance, 
+                                         "Social Determinants of Health: Variable Importance")
+
+# Display the plot
+print(importance_plot)
+
+# Save the plot
+# ggsave("health_determinants_importance.png", importance_plot, width = 10, height = 6, dpi = 300)
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(sf)       # For handling spatial data
+library(viridis)  # For nice color palettes
+library(readxl)   # To read the Excel file
+library(stringr)  # For string manipulation
+
+# ===== DATA IMPORT AND PREPARATION =====
+# Import the Excel file with health rankings data
+file_path <- "2025_county_health_rankings_georgia_data_-_v1.xlsx"
+
+# Check if the file exists
+if (!file.exists(file_path)) {
+  stop("File not found. Please make sure the Excel file is in the correct location.")
+}
+
+# Import the health rankings data
+ga_data <- read_excel(file_path, 
+                     sheet = "Select Measure Data", 
+                     skip = 1)  # Skip header row
+
+# Also get the additional data sheet that contains obesity and diabetes metrics
+ga_additional <- read_excel(file_path,
+                          sheet = "Additional Measure Data",
+                          skip = 1)
+
+# Clean column names
+names(ga_data) <- make.names(names(ga_data), unique = TRUE)
+names(ga_additional) <- make.names(names(ga_additional), unique = TRUE)
+
+# Create a combined dataset with the columns we need
+ga_health <- ga_data %>%
+  # Filter out the state-level row if it exists
+  filter(FIPS != "13000") %>%
+  # Select needed columns
+  select(
+    FIPS,
+    County
+  )
+
+# Join with additional data that contains diabetes and obesity
+ga_health <- ga_health %>%
+  left_join(
+    ga_additional %>%
+      select(
+        FIPS,
+        Obesity = `X..Adults.with.Obesity`,
+        Diabetes = `X..Adults.with.Diabetes`
+      ),
+    by = "FIPS"
+  )
+
+# Convert FIPS to character if it's not already
+ga_health$FIPS <- as.character(ga_health$FIPS)
+
+# ===== GET GEORGIA COUNTY MAP DATA =====
+# We'll use the maps package to get county boundaries
+library(maps)
+library(mapdata)
+
+# Get Georgia county map data
+ga_map <- map_data("county", region = "georgia")
+
+# The map data uses lowercase county names, so let's convert our data to match
+ga_health$county_lowercase <- tolower(ga_health$County)
+
+# Join the health data with the map data
+# Note: We need to make sure county names match between the datasets
+ga_map <- ga_map %>%
+  rename(county_lowercase = subregion) %>%
+  left_join(ga_health, by = "county_lowercase")
+
+# ===== CREATE DIABETES MAP =====
+# Create a map showing diabetes rates by county
+diabetes_map <- ggplot() +
+  geom_polygon(data = ga_map, 
+               aes(x = long, y = lat, group = group, fill = Diabetes),
+               color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "plasma", 
+                      name = "Diabetes Rate (%)",
+                      direction = -1) +  # Reversed so darker = higher rates
+  labs(title = "Diabetes Rates by County in Georgia",
+       subtitle = "Percentage of adults with diabetes") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_map()
+
+print(diabetes_map)
+ggsave("georgia_diabetes_map.png", diabetes_map, width = 10, height = 10, dpi = 300)
+
+# ===== CREATE OBESITY MAP =====
+# Create a map showing obesity rates by county
+obesity_map <- ggplot() +
+  geom_polygon(data = ga_map, 
+               aes(x = long, y = lat, group = group, fill = Obesity),
+               color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "inferno", 
+                      name = "Obesity Rate (%)",
+                      direction = -1) +  # Reversed so darker = higher rates
+  labs(title = "Obesity Rates by County in Georgia",
+       subtitle = "Percentage of adults with obesity") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_map()
+
+print(obesity_map)
+ggsave("georgia_obesity_map.png", obesity_map, width = 10, height = 10, dpi = 300)
+```
+
+
+```{r}
+# Georgia Health Equity Analysis - Part 4: Cluster Analysis
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(cluster)
+library(factoextra)
+library(tidyr)
+
+# Load processed data
+ga_health <- readRDS("outputs/ga_health_with_risk_scores.rds")
+
+# Create directories for outputs
+dir.create("plots", showWarnings = FALSE)
+
+# ========== CLUSTER ANALYSIS ==========
+
+# Prepare data for clustering - select relevant variables
+cluster_vars <- c("MentalHealthCrises", "Obesity", "Diabetes", "FoodAccess", 
+                 "PercentUninsured", "BelowPovertyLine", "MedianHouseholdIncome", 
+                 "HighSchoolGradRate")
+
+# Extract data for clustering
+cluster_data <- ga_health %>%
+  select(all_of(cluster_vars)) %>%
+  scale() # Standardize variables
+
+# Convert to matrix for clustering
+cluster_matrix <- as.matrix(cluster_data)
+rownames(cluster_matrix) <- ga_health$County
+
+# Determine optimal number of clusters
+set.seed(123) # For reproducibility
+
+# Silhouette method
+png("plots/optimal_clusters_silhouette.png", width = 10, height = 8, units = "in", res = 300)
+fviz_nbclust(cluster_matrix, kmeans, method = "silhouette", k.max = 10) +
+  labs(title = "Optimal Number of Clusters - Silhouette Method")
+dev.off()
+
+# Elbow method
+png("plots/optimal_clusters_wss.png", width = 10, height = 8, units = "in", res = 300)
+fviz_nbclust(cluster_matrix, kmeans, method = "wss", k.max = 10) +
+  labs(title = "Optimal Number of Clusters - Elbow Method")
+dev.off()
+
+# Gap statistic method
+gap_stat <- cluster::clusGap(cluster_matrix, FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+png("plots/optimal_clusters_gap.png", width = 10, height = 8, units = "in", res = 300)
+fviz_gap_stat(gap_stat) +
+  labs(title = "Optimal Number of Clusters - Gap Statistic Method")
+dev.off()
+
+# Based on the optimization methods, we'll use k=4 clusters
+k <- 4
+
+# Perform k-means clustering
+set.seed(123)
+kmeans_result <- kmeans(cluster_matrix, centers = k, nstart = 25)
+
+# Add cluster information to the original dataset
+ga_health$Cluster <- as.factor(kmeans_result$cluster)
+
+# Visualize clusters using PCA
+pca_result <- prcomp(cluster_matrix)
+cluster_pca <- as.data.frame(pca_result$x[, 1:2])
+cluster_pca$Cluster <- kmeans_result$cluster
+cluster_pca$County <- ga_health$County
+
+# Plot clusters on principal components
+p1 <- ggplot(cluster_pca, aes(x = PC1, y = PC2, color = as.factor(Cluster))) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_text(aes(label = County), size = 2.5, check_overlap = TRUE, hjust = -0.1, vjust = -0.1) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "K-means Clustering of Georgia Counties",
+       subtitle = "Counties grouped by health and socioeconomic factors",
+       x = "Principal Component 1",
+       y = "Principal Component 2",
+       color = "Cluster") +
+  theme_minimal() +
+  theme(legend.position = "right")
+print(p1)
+ggsave("plots/county_clusters_pca.png", p1, width = 10, height = 8, dpi = 300)
+
+# Alternative visualization using factoextra
+p2 <- fviz_cluster(kmeans_result, data = cluster_matrix, 
+                  geom = "point",
+                  ellipse.type = "convex",
+                  palette = "Set1",
+                  ggtheme = theme_minimal()) +
+  labs(title = "K-means Clustering of Georgia Counties",
+       subtitle = "Counties grouped by health and socioeconomic factors")
+print(p2)
+ggsave("plots/county_clusters_fviz.png", p2, width = 10, height = 8, dpi = 300)
+
+# Analyze cluster characteristics
+cluster_profiles <- ga_health %>%
+  group_by(Cluster) %>%
+  summarize(
+    CountyCount = n(),
+    MentalHealth_Mean = mean(MentalHealthCrises),
+    Obesity_Mean = mean(Obesity),
+    Diabetes_Mean = mean(Diabetes),
+    FoodAccess_Mean = mean(FoodAccess),
+    Uninsured_Mean = mean(PercentUninsured),
+    Poverty_Mean = mean(BelowPovertyLine),
+    Income_Mean = mean(MedianHouseholdIncome),
+    Education_Mean = mean(HighSchoolGradRate),
+    MultiRisk_Mean = mean(MultiRiskScore)
+  )
+
+# Print cluster profiles
+print("Cluster Profiles (Mean Values):")
+print(cluster_profiles)
+
+# Save cluster profiles
+write.csv(cluster_profiles, "outputs/cluster_profiles.csv", row.names = FALSE)
+
+# Visualize cluster profiles
+cluster_profiles_long <- cluster_profiles %>%
+  select(-CountyCount) %>%
+  pivot_longer(cols = -Cluster, names_to = "Variable", values_to = "Value")
+
+# Plot cluster characteristics
+p3 <- ggplot(cluster_profiles_long, aes(x = Variable, y = Value, fill = Cluster)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Set1") +
+  facet_wrap(~ Variable, scales = "free_y") +
+  labs(title = "Characteristics of County Clusters",
+       subtitle = "Mean values of health and socioeconomic factors by cluster",
+       x = "",
+       y = "Value",
+       fill = "Cluster") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        strip.text = element_text(size = 10))
+print(p3)
+ggsave("plots/cluster_characteristics.png", p3, width = 14, height = 10, dpi = 300)
+
+# Create radar chart of cluster profiles
+# First, standardize the variables for comparison
+radar_data <- cluster_profiles %>%
+  select(-CountyCount) %>%
+  mutate(across(-Cluster, scale))
+
+# Prepare data for radar plot
+radar_vars <- colnames(radar_data)[-1]
+radar_data_long <- radar_data %>%
+  pivot_longer(cols = -Cluster, names_to = "Variable", values_to = "Value")
+
+create_radar_chart <- function(data, color_palette = NULL) {
+  # data should be a data frame with:
+  # - First column as group identifier (e.g., Cluster)
+  # - Remaining columns as variables to plot on radar axes
+  
+  # If no palette is provided, use a default one
+  if (is.null(color_palette)) {
+    color_palette <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", 
+                      "#FF7F00", "#FFFF33", "#A65628", "#F781BF")
+  }
+  
+  # Get the number of variables (columns excluding the first one)
+  n_vars <- ncol(data) - 1
+  
+  # Get the variable names
+  var_names <- colnames(data)[2:(n_vars + 1)]
+  
+  # Get the unique groups
+  groups <- unique(data[[1]])
+  n_groups <- length(groups)
+  
+  # Specify the colors for each group
+  colors <- color_palette[1:n_groups]
+  
+  # Set up the radar chart layout
+  # Create a sequence of angles for the variables
+  angles <- seq(0, 2 * pi, length.out = n_vars + 1)
+  angles <- angles[-(n_vars + 1)]  # Remove the last duplicate angle
+  
+  # Set up the plotting area
+  par(mar = c(1, 1, 3, 1))  # Adjust margins
+  plot(NULL, 
+       xlim = c(-1.5, 1.5), 
+       ylim = c(-1.5, 1.5), 
+       asp = 1,
+       axes = FALSE, 
+       xlab = "", 
+       ylab = "", 
+       main = "Cluster Profiles Radar Chart")
+  
+  # Draw the web (circles)
+  for (i in seq(0.2, 1, by = 0.2)) {
+    polygon(x = i * sin(seq(0, 2 * pi, length.out = 100)),
+            y = i * cos(seq(0, 2 * pi, length.out = 100)),
+            border = "gray", 
+            lty = "dashed")
+  }
+  
+  # Draw the axes
+  for (i in 1:n_vars) {
+    lines(c(0, 1.1 * sin(angles[i])), 
+          c(0, 1.1 * cos(angles[i])), 
+          col = "gray")
+    text(1.3 * sin(angles[i]), 
+         1.3 * cos(angles[i]), 
+         var_names[i], 
+         cex = 0.8)
+  }
+  
+  # Plot each group
+  for (g in 1:n_groups) {
+    group_data <- data[data[[1]] == groups[g], 2:(n_vars + 1)]
+    group_data_scaled <- as.numeric(group_data)
+    
+    # Calculate the x and y coordinates for the radar
+    x_coords <- group_data_scaled * sin(angles)
+    y_coords <- group_data_scaled * cos(angles)
+    
+    # Close the polygon
+    x_coords <- c(x_coords, x_coords[1])
+    y_coords <- c(y_coords, y_coords[1])
+    
+    # Draw the radar for this group
+    polygon(x_coords, 
+            y_coords, 
+            col = adjustcolor(colors[g], alpha.f = 0.3), 
+            border = colors[g], 
+            lwd = 2)
+    
+    # Add points at the vertices
+    points(x_coords[-length(x_coords)], 
+           y_coords[-length(y_coords)], 
+           pch = 16, 
+           col = colors[g], 
+           cex = 1.2)
+  }
+  
+  # Add a legend
+  legend("topright", 
+         legend = groups, 
+         fill = adjustcolor(colors, alpha.f = 0.3), 
+         border = colors, 
+         cex = 0.8)
+}
+
+# Identify counties in each cluster
+cluster_counties <- ga_health %>%
+  group_by(Cluster) %>%
+  summarize(Counties = paste(County, collapse = ", "))
+
+# Print counties in each cluster
+print("Counties in each cluster:")
+print(cluster_counties)
+
+# Save counties in each cluster
+write.csv(cluster_counties, "outputs/cluster_counties.csv", row.names = FALSE)
+
+# Save data with cluster information
+saveRDS(ga_health, "outputs/ga_health_with_clusters.rds")
+
+print("Cluster analysis complete. Results saved to outputs/ and plots/ directories.")
+```
+
+```{r}
+# Georgia Health Equity Analysis - Part 5: Predictive Modeling
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(randomForest)
+library(caret)
+library(e1071)  # For svm
+library(xgboost) # For gradient boosting
+library(viridis)
+
+# Load processed data
+ga_health <- readRDS("outputs/ga_health_with_clusters.rds")
+
+# Create directories for outputs
+dir.create("plots", showWarnings = FALSE)
+dir.create("models", showWarnings = FALSE)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# ========== PREDICTIVE MODELING ==========
+
+# ----- Model 1: Mental Health Crisis Days Prediction -----
+
+# Prepare data for modeling
+model_data <- ga_health %>%
+  select(MentalHealthCrises, Obesity, Diabetes, FoodAccess, ClinicAccess, PercentUninsured, 
+         BelowPovertyLine, RentBurdened, HighSchoolGradRate, UnemploymentRate, 
+         MedianHouseholdIncome, PercentBlack, PercentHispanic)
+
+# Split data into training and testing sets (80% train, 20% test)
+train_index <- createDataPartition(model_data$MentalHealthCrises, p = 0.8, list = FALSE)
+train_data <- model_data[train_index, ]
+test_data <- model_data[-train_index, ]
+
+print(paste("Training set size:", nrow(train_data)))
+print(paste("Testing set size:", nrow(test_data)))
+
+# Function to evaluate model performance
+evaluate_model <- function(predictions, actuals, model_name) {
+  rmse <- sqrt(mean((predictions - actuals)^2))
+  mae <- mean(abs(predictions - actuals))
+  r2 <- cor(predictions, actuals)^2
+  
+  cat("\n", model_name, "Performance Metrics:\n")
+  cat("RMSE:", round(rmse, 4), "\n")
+  cat("MAE:", round(mae, 4), "\n")
+  cat("R-squared:", round(r2, 4), "\n")
+  
+  return(data.frame(
+    Model = model_name,
+    RMSE = rmse,
+    MAE = mae,
+    R_squared = r2
+  ))
+}
+
+# ----- 1.1 Linear Regression Model -----
+lm_model <- lm(MentalHealthCrises ~ ., data = train_data)
+summary(lm_model)
+
+# Model predictions
+lm_preds <- predict(lm_model, newdata = test_data)
+lm_metrics <- evaluate_model(lm_preds, test_data$MentalHealthCrises, "Linear Regression")
+
+# Save model
+saveRDS(lm_model, "models/mental_health_lm_model.rds")
+
+# ----- 1.2 Random Forest Model -----
+rf_model <- randomForest(MentalHealthCrises ~ ., data = train_data, 
+                         ntree = 50000, importance = TRUE)
+print(rf_model)
+
+# Model predictions
+rf_preds <- predict(rf_model, newdata = test_data)
+rf_metrics <- evaluate_model(rf_preds, test_data$MentalHealthCrises, "Random Forest")
+
+# Save model
+saveRDS(rf_model, "models/mental_health_rf_model.rds")
+
+# Variable importance in random forest
+var_importance <- importance(rf_model)
+var_importance_df <- data.frame(
+  Variable = rownames(var_importance),
+  Importance = var_importance[, "%IncMSE"]
+) %>%
+  arrange(desc(Importance))
+
+# Plot variable importance
+p1 <- ggplot(var_importance_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = viridis(1)) +
+  coord_flip() +
+  labs(title = "Variable Importance for Predicting Mental Health Crises",
+       subtitle = "Random Forest model",
+       x = "Variable",
+       y = "Importance (% Increase in MSE when Variable Removed)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 9))
+print(p1)
+ggsave("plots/mental_health_variable_importance.png", p1, width = 8, height = 6, dpi = 300)
+
+# ----- 1.3 Support Vector Machines -----
+# Scale the data for SVM
+preproc <- preProcess(train_data, method = c("center", "scale"))
+train_data_scaled <- predict(preproc, train_data)
+test_data_scaled <- predict(preproc, test_data)
+
+# Train SVM model
+svm_model <- svm(MentalHealthCrises ~ ., data = train_data_scaled, 
+                kernel = "radial", cost = 10, epsilon = 0.1)
+print(svm_model)
+
+# Model predictions
+svm_preds <- predict(svm_model, newdata = test_data_scaled)
+svm_metrics <- evaluate_model(svm_preds, test_data$MentalHealthCrises, "SVM")
+
+# Save model
+saveRDS(svm_model, "models/mental_health_svm_model.rds")
+saveRDS(preproc, "models/mental_health_preproc.rds") # Save preprocessing for later use
+
+# ----- 1.4 Gradient Boosting -----
+# Prepare data for xgboost
+x_train <- model.matrix(MentalHealthCrises ~ . - 1, data = train_data)
+y_train <- train_data$MentalHealthCrises
+x_test <- model.matrix(MentalHealthCrises ~ . - 1, data = test_data)
+y_test <- test_data$MentalHealthCrises
+
+# Train XGBoost model
+xgb_model <- xgboost(data = x_train, label = y_train, 
+                    nrounds = 100, objective = "reg:squarederror",
+                    verbose = 0)
+
+# Model predictions
+xgb_preds <- predict(xgb_model, newdata = x_test)
+xgb_metrics <- evaluate_model(xgb_preds, y_test, "XGBoost")
+
+# Save model
+saveRDS(xgb_model, "models/mental_health_xgb_model.rds")
+
+# ----- 1.5 Model Comparison -----
+model_comparison <- rbind(lm_metrics, rf_metrics, svm_metrics, xgb_metrics)
+print("Model Comparison:")
+print(model_comparison)
+write.csv(model_comparison, "outputs/mental_health_model_comparison.csv", row.names = FALSE)
+
+# Find the best model
+best_model <- model_comparison[which.min(model_comparison$RMSE), "Model"]
+cat("Best model based on RMSE:", best_model, "\n")
+
+# Plot model comparison
+p2 <- ggplot(model_comparison, aes(x = reorder(Model, -RMSE), y = RMSE, fill = Model)) +
+  geom_col() +
+  scale_fill_viridis_d() +
+  labs(title = "Model Comparison for Mental Health Crisis Prediction",
+       x = "Model",
+       y = "Root Mean Square Error (RMSE)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(p2)
+ggsave("plots/mental_health_model_comparison.png", p2, width = 8, height = 6, dpi = 300)
+
+# ----- 1.6 Visualize Predictions -----
+# Combine predictions from all models
+predictions_df <- data.frame(
+  Actual = test_data$MentalHealthCrises,
+  Linear_Regression = lm_preds,
+  Random_Forest = rf_preds,
+  SVM = svm_preds,
+  XGBoost = xgb_preds
+)
+
+# Prepare data for plotting
+predictions_long <- tidyr::pivot_longer(
+  predictions_df, 
+  cols = -Actual, 
+  names_to = "Model", 
+  values_to = "Predicted"
+)
+
+# Plot predictions vs actual values
+p3 <- ggplot(predictions_long, aes(x = Actual, y = Predicted, color = Model)) +
+  geom_point(alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
+  facet_wrap(~ Model, scales = "free") +
+  scale_color_viridis_d() +
+  labs(title = "Actual vs. Predicted Mental Health Crisis Days",
+       x = "Actual Days",
+       y = "Predicted Days") +
+  theme_minimal()
+print(p3)
+ggsave("plots/mental_health_predictions.png", p3, width = 10, height = 8, dpi = 300)
+
+# ----- 2. Risk Classification Model -----
+# Create a risk classification model to predict high-risk counties
+
+# Prepare data for classification
+class_data <- ga_health %>%
+  mutate(HighRisk = ifelse(MentalHealthRisk == "High Risk", 1, 0)) %>%
+  select(HighRisk, Obesity, Diabetes, FoodAccess, ClinicAccess, PercentUninsured, 
+         BelowPovertyLine, RentBurdened, HighSchoolGradRate, UnemploymentRate, 
+         MedianHouseholdIncome, PercentBlack, PercentHispanic)
+
+# Convert target to factor
+class_data$HighRisk <- as.factor(class_data$HighRisk)
+
+# Split data
+train_index <- createDataPartition(class_data$HighRisk, p = 0.8, list = FALSE)
+train_data_class <- class_data[train_index, ]
+test_data_class <- class_data[-train_index, ]
+
+# Train Random Forest classifier
+rf_class_model <- randomForest(HighRisk ~ ., data = train_data_class, 
+                              ntree = 500, importance = TRUE)
+
+# Predictions
+rf_class_preds <- predict(rf_class_model, newdata = test_data_class)
+rf_class_probs <- predict(rf_class_model, newdata = test_data_class, type = "prob")
+
+# Confusion matrix
+conf_matrix <- confusionMatrix(rf_class_preds, test_data_class$HighRisk)
+print(conf_matrix)
+
+# Variable importance for classification
+var_imp_class <- importance(rf_class_model)
+var_imp_class_df <- data.frame(
+  Variable = rownames(var_imp_class),
+  Importance = var_imp_class[, "MeanDecreaseGini"]
+) %>%
+  arrange(desc(Importance))
+
+# Plot variable importance for classification
+p4 <- ggplot(var_imp_class_df, aes(x = reorder(Variable, Importance), y = Importance)) +
+  geom_col(fill = viridis(1, begin = 0.7)) +
+  coord_flip() +
+  labs(title = "Variable Importance for Predicting High-Risk Counties",
+       subtitle = "Random Forest classification model",
+       x = "Variable",
+       y = "Importance (Mean Decrease in Gini)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 9))
+print(p4)
+ggsave("plots/high_risk_classification_importance.png", p4, width = 8, height = 6, dpi = 300)
+
+# Save classification model
+saveRDS(rf_class_model, "models/high_risk_classification_model.rds")
+
+# Print classification metrics
+cat("\nClassification Metrics:\n")
+cat("Accuracy:", round(conf_matrix$overall["Accuracy"], 4), "\n")
+cat("Sensitivity:", round(conf_matrix$byClass["Sensitivity"], 4), "\n")
+cat("Specificity:", round(conf_matrix$byClass["Specificity"], 4), "\n")
+
+# Save classification results
+class_metrics <- data.frame(
+  Metric = c("Accuracy", "Sensitivity", "Specificity"),
+  Value = c(
+    conf_matrix$overall["Accuracy"],
+    conf_matrix$byClass["Sensitivity"],
+    conf_matrix$byClass["Specificity"]
+  )
+)
+write.csv(class_metrics, "outputs/high_risk_classification_metrics.csv", row.names = FALSE)
+
+print("Predictive modeling complete. Results saved to outputs/, models/, and plots/ directories.")
+```
+
+```{r}
+# Georgia Health Equity Analysis - Part 6: County Risk Profiles and Intervention Analysis
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(leaflet)
+library(viridis)
+library(scales)
+
+# Load processed data
+ga_health <- readRDS("outputs/ga_health_with_clusters.rds")
+
+# Create directories for outputs
+dir.create("plots", showWarnings = FALSE)
+dir.create("outputs/county_profiles", showWarnings = FALSE)
+
+# ========== COUNTY RISK PROFILES ==========
+
+# ----- 1. Identify High-Risk Counties -----
+
+# High-risk counties based on multi-risk score
+high_risk_counties <- ga_health %>%
+  filter(MultiRiskScore >= 2) %>%
+  select(County, FIPS, Cluster, MultiRiskScore, MultiRiskCategory, 
+         MentalHealthCrises, MentalHealthRisk, Obesity, ObesityRisk, 
+         Diabetes, DiabetesRisk, FoodAccess, FoodDesertRisk,
+         PercentUninsured, BelowPovertyLine, MedianHouseholdIncome) %>%
+  arrange(desc(MultiRiskScore))
+
+# Print high-risk counties
+print("Counties with Multiple High-Risk Health Issues:")
+print(high_risk_counties)
+
+# Save high-risk counties
+write.csv(high_risk_counties, "outputs/high_risk_counties.csv", row.names = FALSE)
+
+# ----- 2. Create County Risk Profiles -----
+
+# Select top 10 highest-risk counties
+top_risk_counties <- high_risk_counties %>% head(10)
+top_counties <- top_risk_counties$County
+
+# Create detailed profiles for each high-risk county
+for (county in top_counties) {
+  # Extract county data
+  county_data <- ga_health %>% filter(County == county)
+  
+  # Create a risk profile summary
+  profile <- data.frame(
+    Metric = c("Mental Health Crisis Days", "Obesity Rate (%)", "Diabetes Rate (%)",
+              "Food Access Index", "Uninsured (%)", "Children in Poverty (%)",
+              "Median Household Income", "Mental Health Provider Rate",
+              "High School Graduation Rate (%)", "Unemployment Rate (%)"),
+    Value = c(county_data$MentalHealthCrises, county_data$Obesity, county_data$Diabetes,
+             county_data$FoodAccess, county_data$PercentUninsured, county_data$BelowPovertyLine,
+             county_data$MedianHouseholdIncome, county_data$ClinicAccess,
+             county_data$HighSchoolGradRate, county_data$UnemploymentRate),
+    Risk_Level = c(as.character(county_data$MentalHealthRisk), 
+                  as.character(county_data$ObesityRisk),
+                  as.character(county_data$DiabetesRisk),
+                  as.character(county_data$FoodDesertRisk),
+                  "NA", "NA", "NA", "NA", "NA", "NA")
+  )
+  
+  # Save profile
+  write.csv(profile, paste0("outputs/county_profiles/", county, "_profile.csv"), row.names = FALSE)
+}
+
+# ----- 3. Visualize Risk Profiles for Top Counties -----
+
+# Prepare data for visualization
+top_risk_long <- top_risk_counties %>%
+  select(County, MentalHealthCrises, Obesity, Diabetes, 
+         PercentUninsured, BelowPovertyLine, MedianHouseholdIncome) %>%
+  pivot_longer(cols = -County, names_to = "Metric", values_to = "Value")
+
+# Adjust metric names for display
+top_risk_long$Metric <- factor(top_risk_long$Metric, 
+                              levels = c("MentalHealthCrises", "Obesity", "Diabetes", 
+                                         "PercentUninsured", "BelowPovertyLine", "MedianHouseholdIncome"),
+                              labels = c("Mental Health Crisis Days", "Obesity Rate (%)", "Diabetes Rate (%)",
+                                        "Uninsured (%)", "Children in Poverty (%)", "Median Household Income ($)"))
+
+# Plot risk profile of top counties
+p1 <- ggplot(top_risk_long, aes(x = Metric, y = Value, fill = County)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ Metric, scales = "free_y") +
+  scale_fill_viridis_d() +
+  labs(title = "Risk Profile of Top High-Risk Counties",
+       subtitle = "Counties with multiple high-risk health issues",
+       x = "",
+       y = "Value",
+       fill = "County") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        strip.text = element_text(size = 10),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"))
+print(p1)
+ggsave("plots/high_risk_county_profiles.png", p1, width = 12, height = 8, dpi = 300)
+
+# ----- 4. Geographic Distribution of Risk -----
+
+# Check if we have geographic data for counties
+has_geo_data <- FALSE
+
+# If we have a shapefile for Georgia counties, we can create a map
+if (file.exists("data/ga_counties.shp")) {
+  library(sf)
+  # Read shapefile
+  ga_counties_sf <- st_read("data/ga_counties.shp", quiet = TRUE)
+  
+  # Join with our health data
+  ga_counties_sf <- ga_counties_sf %>%
+    left_join(ga_health, by = c("COUNTYFP" = "FIPS"))
+  
+  # Create a chloropleth map
+  ggplot(ga_counties_sf) +
+    geom_sf(aes(fill = MultiRiskScore)) +
+    scale_fill_viridis_c() +
+    labs(title = "Geographic Distribution of Health Risk Scores",
+         fill = "Multi-Risk Score") +
+    theme_minimal()
+  
+  has_geo_data <- TRUE
+} else {
+  message("Geographic data not found. Skipping map creation.")
+}
+
+# ========== INTERVENTION ANALYSIS ==========
+
+# ----- 1. Identify Potential Interventions -----
+
+# Define potential interventions based on risk factors
+interventions <- data.frame(
+  Risk_Factor = c("Mental Health Crises", "Obesity", "Diabetes", "Food Access", 
+                 "Healthcare Access", "Poverty"),
+  Primary_Indicator = c("MentalHealthCrises", "Obesity", "Diabetes", "FoodAccess", 
+                       "PercentUninsured", "BelowPovertyLine"),
+  Intervention_Type = c("Mental Health Services", "Obesity Prevention", "Diabetes Management", 
+                       "Food Security Programs", "Healthcare Access", "Economic Support"),
+  Intervention_Examples = c(
+    "Mobile mental health clinics; Telehealth services; Community health workers; School-based counseling",
+    "Community fitness programs; Nutrition education; School-based physical activity; Healthy food retail initiatives",
+    "Diabetes screening; Self-management education; Community health workers; Medication access programs",
+    "Food banks; Community gardens; Farmers markets; Food prescription programs; Mobile markets",
+    "Insurance enrollment assistance; Federally Qualified Health Centers; Telehealth infrastructure; Transportation services",
+    "Job training; Housing assistance; Educational support; Child care subsidies"
+  )
+)
+
+# Save intervention options
+write.csv(interventions, "outputs/potential_interventions.csv", row.names = FALSE)
+
+# ----- 2. Match Counties with Most Needed Interventions -----
+
+# Function to identify top intervention needs for a county
+identify_interventions <- function(county_data, interventions_df) {
+  # Create a risk score for each intervention area
+  risk_scores <- data.frame(
+    Risk_Factor = interventions_df$Risk_Factor,
+    Score = NA
+  )
+  
+  # Calculate risk scores based on relevant metrics
+  risk_scores$Score[risk_scores$Risk_Factor == "Mental Health Crises"] <- 
+    (county_data$MentalHealthRisk == "High Risk") * 3 + 
+    (county_data$MentalHealthRisk == "Medium Risk") * 2 +
+    (county_data$MentalHealthRisk == "Low Risk") * 1
+  
+  risk_scores$Score[risk_scores$Risk_Factor == "Obesity"] <- 
+    (county_data$ObesityRisk == "High Risk") * 3 + 
+    (county_data$ObesityRisk == "Medium Risk") * 2 +
+    (county_data$ObesityRisk == "Low Risk") * 1
+  
+  risk_scores$Score[risk_scores$Risk_Factor == "Diabetes"] <- 
+    (county_data$DiabetesRisk == "High Risk") * 3 + 
+    (county_data$DiabetesRisk == "Medium Risk") * 2 +
+    (county_data$DiabetesRisk == "Low Risk") * 1
+  
+  risk_scores$Score[risk_scores$Risk_Factor == "Food Access"] <- 
+    (county_data$FoodDesertRisk == "High Risk") * 3 + 
+    (county_data$FoodDesertRisk == "Medium Risk") * 2 +
+    (county_data$FoodDesertRisk == "Low Risk") * 1
+  
+  risk_scores$Score[risk_scores$Risk_Factor == "Healthcare Access"] <- 
+    ifelse(county_data$PercentUninsured > quantile(ga_health$PercentUninsured, 0.75), 3,
+           ifelse(county_data$PercentUninsured > quantile(ga_health$PercentUninsured, 0.5), 2, 
+                  ifelse(county_data$PercentUninsured > quantile(ga_health$PercentUninsured, 0.25), 1, 0)))
+  
+  risk_scores$Score[risk_scores$Risk_Factor == "Poverty"] <- 
+    ifelse(county_data$BelowPovertyLine > quantile(ga_health$BelowPovertyLine, 0.75), 3,
+           ifelse(county_data$BelowPovertyLine > quantile(ga_health$BelowPovertyLine, 0.5), 2, 
+                  ifelse(county_data$BelowPovertyLine > quantile(ga_health$BelowPovertyLine, 0.25), 1, 0)))
+  
+  # Sort by score
+  risk_scores <- risk_scores %>% arrange(desc(Score))
+  
+  # Join with intervention information
+  interventions_needed <- risk_scores %>%
+    left_join(interventions_df, by = "Risk_Factor") %>%
+    select(Risk_Factor, Score, Intervention_Type, Intervention_Examples)
+  
+  return(interventions_needed)
+}
+
+# Create county-specific intervention recommendations
+county_interventions <- list()
+
+for (county in top_counties) {
+  county_data <- ga_health %>% filter(County == county)
+  interventions_needed <- identify_interventions(county_data, interventions)
+  county_interventions[[county]] <- interventions_needed
+  
+  # Save to CSV
+  write.csv(interventions_needed, 
+            paste0("outputs/county_profiles/", county, "_interventions.csv"), 
+            row.names = FALSE)
+}
+
+# ----- 3. Create Intervention Impact Analysis -----
+
+# Function to estimate potential impact of interventions
+estimate_impact <- function(intervention_type, baseline_value, target_improvement = 0.2) {
+  # Simple model: assume 20% improvement as
+```
+
+```{r}
+# Georgia Health Equity Analysis - Main Script
+# UnHack 2025 - Building Technology for Improved Health Outcomes
+
+# This script runs all analysis components in sequence
+# Useful for reproducing the entire analysis pipeline
+
+# ========== SETUP ==========
+# Create necessary directories
+dir.create("outputs", showWarnings = FALSE)
+dir.create("plots", showWarnings = FALSE)
+dir.create("models", showWarnings = FALSE)
+dir.create("outputs/county_profiles", showWarnings = FALSE)
+
+# Check required packages and install if missing
+required_packages <- c("readxl", "dplyr", "tidyr", "ggplot2", "corrplot", 
+                      "randomForest", "caret", "viridis", "reshape2", 
+                      "cluster", "factoextra", "gridExtra", "scales")
+
+# Function to check and install packages
+check_and_install <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    cat("Installing package:", pkg, "\n")
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+  }
+}
+
+# Check each package
+for (pkg in required_packages) {
+  check_and_install(pkg)
+}
+
+# Load core packages
+library(dplyr)
+library(ggplot2)
+
+# ========== RUN ANALYSIS COMPONENTS ==========
+
+# Display section headers
+section_header <- function(text) {
+  cat("\n")
+  cat("===========================================================\n")
+  cat(" ", text, "\n")
+  cat("===========================================================\n\n")
+}
+
+# 1. Data Import and Preparation
+section_header("PART 1: DATA IMPORT AND PREPARATION")
+source("01-data-preparation.R")
+
+# 2. Exploratory Data Analysis
+section_header("PART 2: EXPLORATORY DATA ANALYSIS")
+source("02-exploratory-analysis.R")
+
+# 3. Correlation Analysis
+section_header("PART 3: CORRELATION ANALYSIS")
+source("03-correlation-analysis.R")
+
+# 4. Cluster Analysis
+section_header("PART 4: CLUSTER ANALYSIS") 
+source("04-cluster-analysis.R")
+
+# 5. Predictive Modeling
+section_header("PART 5: PREDICTIVE MODELING")
+source("05-predictive-modeling.R")
+
+# 6. County Risk Profiles
+section_header("PART 6: COUNTY RISK PROFILES")
+source("06-risk-profiles.R")
+
+# ========== GENERATE SUMMARY REPORT ==========
+section_header("GENERATING SUMMARY REPORT")
+
+# Create a summary report
+sink("Health_Equity_Analysis_Summary.txt")
+
+cat("==========================================================\n")
+cat("GEORGIA HEALTH EQUITY ANALYSIS SUMMARY\n")
+cat("==========================================================\n\n")
+cat("UnHack 2025 - Building Technology for Improved Health Outcomes\n\n")
+
+cat("----------------------------------------------------------\n")
+cat("ANALYSIS OVERVIEW\n")
+cat("----------------------------------------------------------\n\n")
+
+cat("This analysis examined health disparities across Georgia counties,\n")
+cat("focusing on mental health crises, obesity, and diabetes as key\n")
+cat("health issues. The analysis identified high-risk counties,\n")
+cat("determined socioeconomic factors most strongly associated with\n")
+cat("poor health outcomes, and generated county-specific intervention\n")
+cat("recommendations.\n\n")
+
+cat("----------------------------------------------------------\n")
+cat("KEY FINDINGS\n")
+cat("----------------------------------------------------------\n\n")
+
+# Load key results for the summary
+ga_health <- readRDS("outputs/ga_health_with_clusters.rds")
+high_risk <- read.csv("outputs/high_risk_counties.csv")
+mental_health_corr <- read.csv("outputs/mental_health_correlations.csv")
+model_comparison <- read.csv("outputs/mental_health_model_comparison.csv")
+cluster_profiles <- read.csv("outputs/cluster_profiles.csv")
+
+# Summarize high-risk counties
+cat("1. HIGH-RISK COUNTIES\n")
+cat("   ", nrow(high_risk), " counties were identified with multiple high-risk health issues.\n")
+cat("   Top 5 highest-risk counties: ", paste(high_risk$County[1:min(5, nrow(high_risk))], collapse = ", "), "\n\n")
+
+# Summarize key correlations
+cat("2. KEY SOCIOECONOMIC FACTORS\n")
+cat("   Mental health crises are most strongly correlated with:\n")
+for (i in 1:min(3, nrow(mental_health_corr))) {
+  cat("   - ", mental_health_corr$Variable[i], " (r = ", round(mental_health_corr$Correlation[i], 2), ")\n")
+}
+cat("\n")
+
+# Summarize predictive model performance
+cat("3. PREDICTIVE MODEL PERFORMANCE\n")
+best_model <- model_comparison$Model[which.min(model_comparison$RMSE)]
+best_rmse <- min(model_comparison$RMSE)
+best_r2 <- model_comparison$R_squared[which.min(model_comparison$RMSE)]
+cat("   Best model for predicting mental health crises: ", best_model, "\n")
+cat("   Model performance: RMSE = ", round(best_rmse, 3), ", R² = ", round(best_r2, 3), "\n\n")
+
+# Summarize county clusters
+cat("4. COUNTY CLUSTERS\n")
+cat("   Counties were grouped into ", nrow(cluster_profiles), " distinct clusters based on health and socioeconomic profiles.\n")
+for (i in 1:nrow(cluster_profiles)) {
+  cat("   - Cluster ", i, " (", cluster_profiles$CountyCount[i], " counties): ")
+  if (cluster_profiles$MentalHealth_Mean[i] > mean(ga_health$MentalHealthCrises)) {
+    cat("High mental health crises, ")
+  } else {
+    cat("Low mental health crises, ")
+  }
+  
+  if (cluster_profiles$Obesity_Mean[i] > mean(ga_health$Obesity)) {
+    cat("high obesity, ")
+  } else {
+    cat("low obesity, ")
+  }
+  
+  if (cluster_profiles$Income_Mean[i] > mean(ga_health$MedianHouseholdIncome)) {
+    cat("higher income.\n")
+  } else {
+    cat("lower income.\n")
+  }
+}
+cat("\n")
+
+# Intervention priorities
+cat("5. INTERVENTION PRIORITIES\n")
+cat("   Based on analysis of risk factors, the following intervention types\n")
+cat("   were identified as priorities for high-risk counties:\n")
+cat("   - Mental Health Services\n")
+cat("   - Food Security Programs\n")
+cat("   - Healthcare Access Initiatives\n")
+cat("   - Economic Support Programs\n\n")
+
+cat("----------------------------------------------------------\n")
+cat("RECOMMENDATIONS\n")
+cat("----------------------------------------------------------\n\n")
+
+cat("1. TARGET HIGH-RISK COUNTIES\n")
+cat("   Focus resources on the identified high-risk counties with multiple\n")
+cat("   health issues, prioritizing those with the highest multi-risk scores.\n\n")
+
+cat("2. ADDRESS SOCIAL DETERMINANTS OF HEALTH\n")
+cat("   Our analysis shows strong correlations between health outcomes and\n")
+cat("   socioeconomic factors. Effective interventions should address underlying\n")
+cat("   issues like poverty, education, and healthcare access.\n\n")
+
+cat("3. CUSTOMIZE INTERVENTIONS\n")
+cat("   Each county has a unique profile of risk factors and needs. Use the\n")
+cat("   county-specific investment profiles to tailor interventions to local\n")
+cat("   contexts rather than implementing one-size-fits-all approaches.\n\n")
+
+cat("4. MEASURE IMPACT\n")
+cat("   Implement robust evaluation frameworks to measure the impact of\n")
+cat("   interventions, focusing on the key health indicators identified in\n")
+cat("   this analysis.\n\n")
+
+cat("5. INTEGRATE SERVICES\n")
+cat("   Since many health issues share common social determinants, design\n")
+cat("   integrated service models that address multiple health issues\n")
+cat("   simultaneously.\n\n")
+
+cat("----------------------------------------------------------\n")
+cat("CONCLUSION\n")
+cat("----------------------------------------------------------\n\n")
+
+cat("This analysis provides a data-driven foundation for targeting health\n")
+cat("equity investments in Georgia. By focusing resources on high-risk\n")
+cat("counties and addressing the specific risk factors identified for each\n")
+cat("area, stakeholders can maximize impact and improve health outcomes across\n")
+cat("the state.\n\n")
+
+cat("The county-specific investment profiles offer a practical tool for\n")
+cat("funders, policymakers, and community organizations to make informed\n")
+cat("decisions about resource allocation and program development.\n\n")
+
+cat("==========================================================\n")
+
+sink()
+
+cat("Summary report generated: Health_Equity_Analysis_Summary.txt\n\n")
+
+section_header("ANALYSIS COMPLETE")
+cat("All analysis components have been executed successfully.\n")
+cat("Results are available in the following directories:\n\n")
+cat("- outputs/: Data files and analysis results\n")
+cat("- plots/: Visualizations and charts\n")
+cat("- models/: Saved predictive models\n")
+cat("- outputs/county_profiles/: County-specific investment profiles\n\n")
+
+cat("Summary report: Health_Equity_Analysis_Summary.txt\n\n")
+```
+

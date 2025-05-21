@@ -1,0 +1,13 @@
+"Variable","Correlation"
+"Diabetes",0.826046301680976
+"BelowPovertyLine",0.754441297635965
+"MedianHouseholdIncome",-0.715286205488558
+"MentalHealthCrises",0.599311743676526
+"HighSchoolGradRate",-0.447657212373216
+"PercentUninsured",-0.419903394254427
+"UnemploymentRate",-0.409715983159173
+"FoodAccess",-0.400286296028916
+"PercentHispanic",-0.387201904999632
+"PercentBlack",-0.284886761333362
+"RentBurdened",0.238020951324028
+"ClinicAccess",-0.222672243485805
